@@ -1,0 +1,15 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chicken = { path = "../../chicken/crates/chicken" }
+
+bevy = { version = "0.18.0"}
+bevy_egui = "0.39.0"
+bevy-inspector-egui = "0.36"
+anyhow = "1.0"
+serde = { version = "1.0.228", features = ["derive"] }
+aeronet_replicon = { version = "0.19.0", features = ["client", "server"] }
+bevy_replicon = "0.38.2"
