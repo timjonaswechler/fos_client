@@ -15,10 +15,11 @@
 #   /home/runner/work/fos_client/fos_client/     # Dieses Repo
 #
 # Ordnerstruktur nachher:
-#   /home/runner/work/fos_client/
+#   /home/runner/work/                           # Work Root
 #   ├── fos_client/                              # Dieses Repo (unverändert)
-#   ├── chicken/                                 # Chicken (geklont)
-#   └── chicken_link/ -> chicken/               # Symlink für Cargo
+#   │   └── fos_client/                          # GitHub Workspace
+#   └── chicken/                                 # Chicken (geklont hierher!)
+#       └── crates/chicken/
 #
 # Usage:
 #   - uses: ./.github/actions/setup-chicken
@@ -64,15 +65,24 @@ runs:
       run: |
         CURRENT_WORKSPACE="$GITHUB_WORKSPACE"
         WORKSPACE_PARENT="$(dirname "$CURRENT_WORKSPACE")"
+        # Die "work" directory (zwei Ebenen über fos_client)
+        WORK_ROOT="$(dirname "$WORKSPACE_PARENT")"
         
         echo "current-workspace=$CURRENT_WORKSPACE" >> $GITHUB_OUTPUT
         echo "workspace-parent=$WORKSPACE_PARENT" >> $GITHUB_OUTPUT
-        echo "chicken-path=$WORKSPACE_PARENT/chicken" >> $GITHUB_OUTPUT
+        echo "work-root=$WORK_ROOT" >> $GITHUB_OUTPUT
+        # WICHTIG: chicken muss nach /home/runner/work/chicken (nicht /home/runner/work/fos_client/chicken)
+        echo "chicken-path=$WORK_ROOT/chicken" >> $GITHUB_OUTPUT
         
         echo "=== Environment ==="
         echo "Current: $CURRENT_WORKSPACE"
-        echo "Parent: $WORKSPACE_PARENT"
-        echo "Chicken will be cloned to: $WORKSPACE_PARENT/chicken"
+        echo "Workspace Parent: $WORKSPACE_PARENT"
+        echo "Work Root: $WORK_ROOT"
+        echo "Chicken will be cloned to: $WORK_ROOT/chicken"
+        echo ""
+        echo "Path verification:"
+        echo "  From: $CURRENT_WORKSPACE"
+        echo "  ../../chicken resolves to: $WORK_ROOT/chicken"
 
     # =========================================================================
     # Schritt 2: Chicken Repository klonen (außerhalb des Workspaces!)
@@ -96,33 +106,29 @@ runs:
         echo "✓ Chicken cloned"
 
     # =========================================================================
-    # Schritt 3: Symlink für Cargo Path-Dependency erstellen
+    # Schritt 3: Pfad-Struktur verifizieren
     # =========================================================================
-    - name: Create Symlink for Cargo
+    - name: Verify Path Structure
       shell: bash
       run: |
         CURRENT="${{ steps.env.outputs.current-workspace }}"
-        WORKSPACE_PARENT="${{ steps.env.outputs.workspace-parent }}"
+        CHICKEN="${{ steps.env.outputs.chicken-path }}"
+        WORK_ROOT="${{ steps.env.outputs.work-root }}"
         
-        # Cargo erwartet: ../../chicken/crates/chicken
-        # Das ist relativ zu: /home/runner/work/fos_client/fos_client
-        # Also: /home/runner/work/chicken
+        # Cargo.toml erwartet: ../../chicken/crates/chicken
+        # Von /home/runner/work/fos_client/fos_client aus:
+        #   ..  = /home/runner/work/fos_client/
+        #   ../.. = /home/runner/work/
+        #   ../../chicken = /home/runner/work/chicken
         
-        # Erstelle Symlink: ../../chicken -> ../chicken
-        # Aber wir müssen vom fos_client Verzeichnis ausgehen
-        
-        # Eigentlich brauchen wir:
-        # /home/runner/work/fos_client/fos_client/../../chicken
-        # = /home/runner/work/chicken
-        
-        # Da wir nichts verschieben, passt der Pfad bereits!
-        # ../../chicken von /home/runner/work/fos_client/fos_client aus
-        # zeigt auf /home/runner/work/chicken
-        
-        echo "✓ Path structure ready"
-        echo "  From: $CURRENT"
-        echo "  Chicken: $WORKSPACE_PARENT/chicken"
-        echo "  Relative path: ../../chicken"
+        echo "=== Path Structure ==="
+        echo "fos_client location: $CURRENT"
+        echo "chicken location: $CHICKEN"
+        echo ""
+        echo "Relative path from fos_client:"
+        echo "  ../../chicken resolves to: $WORK_ROOT/chicken"
+        echo ""
+        echo "✓ Path structure is correct"
 
     # =========================================================================
     # Schritt 4: Verifizieren
@@ -133,6 +139,7 @@ runs:
       run: |
         CURRENT="${{ steps.env.outputs.current-workspace }}"
         CHICKEN="${{ steps.env.outputs.chicken-path }}"
+        WORK_ROOT="${{ steps.env.outputs.work-root }}"
         
         echo "=== Verification ==="
         
@@ -142,7 +149,7 @@ runs:
           ls -la "$CHICKEN"
           exit 1
         fi
-        echo "✓ Chicken crate found"
+        echo "✓ Chicken crate found at $CHICKEN/crates/chicken"
         
         # Prüfe Cargo.toml
         if [[ ! -f "$CHICKEN/crates/chicken/Cargo.toml" ]]; then
@@ -152,14 +159,17 @@ runs:
         echo "✓ Chicken Cargo.toml exists"
         
         # Prüfe ob der Pfad vom fos_client aus erreichbar ist
-        EXPECTED_CHICKEN="$CURRENT/../../chicken"
+        # Von /home/runner/work/fos_client/fos_client aus:
+        # ../../chicken = /home/runner/work/fos_client/fos_client/../../chicken = /home/runner/work/chicken
+        EXPECTED_CHICKEN="$WORK_ROOT/chicken"
         if [[ ! -d "$EXPECTED_CHICKEN" ]]; then
           echo "::error::Chicken not reachable from fos_client via ../../chicken"
           echo "Expected at: $EXPECTED_CHICKEN"
-          ls -la "$CURRENT/../"
+          echo "Work root contents:"
+          ls -la "$WORK_ROOT"
           exit 1
         fi
-        echo "✓ Chicken reachable from fos_client"
+        echo "✓ Chicken reachable from fos_client via ../../chicken"
         
         # Ermittle SHA
         cd "$CHICKEN"
@@ -175,9 +185,10 @@ runs:
         echo "chicken: $CHICKEN"
         echo "chicken SHA: $CHICKEN_SHA"
         echo ""
-        echo "Cargo.toml dependency path: ../../chicken/crates/chicken"
+        echo "Cargo.toml dependency: ../../chicken/crates/chicken"
+        echo "Resolves to: $EXPECTED_CHICKEN/crates/chicken"
         
-        # Zeige beide Verzeichnisse
+        # Zeige Verzeichnisstruktur
         echo ""
         echo "=== Directory Structure ==="
-        ls -la "$(dirname "$CURRENT")"
+        ls -la "$WORK_ROOT"
