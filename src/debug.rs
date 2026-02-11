@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 use chicken::states::{
     AppScope, ClientStatus, HostNewGameMenuScreen, HostSavedGameMenuScreen, JoinGameMenuScreen,
     MainMenuContext, MultiplayerSetup, NewGameMenuScreen, SavedGameMenuScreen, ServerVisibility,

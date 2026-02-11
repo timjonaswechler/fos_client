@@ -1,0 +1,146 @@
+# =============================================================================
+# Composite Action: Setup Chicken Dependency
+# =============================================================================
+# Diese Action klont das Chicken Repository in die korrekte Ordnerstruktur,
+# die für den lokalen Path-Dependency in Cargo.toml benötigt wird.
+#
+# Ordnerstruktur nach Setup:
+#   /workspace/
+#   ├── fos/fos_client/          # Dieses Repo (wird vorher gecheckt aus)
+#   └── chicken/crates/chicken/  # Chicken Dependency
+#
+# Usage:
+#   - uses: ./.github/actions/setup-chicken
+#     with:
+#       chicken-repository: 'your-org/chicken'
+#       chicken-ref: 'main'
+# =============================================================================
+
+name: 'Setup Chicken Dependency'
+description: 'Klont das Chicken Repository in die korrekte Ordnerstruktur für Cargo Path-Dependencies'
+
+inputs:
+  chicken-repository:
+    description: 'GitHub Repository für Chicken (Format: owner/repo)'
+    required: true
+    default: 'tim-jonaswechler/chicken'
+  chicken-ref:
+    description: 'Git ref für Chicken Checkout (branch, tag, sha)'
+    required: false
+    default: 'main'
+  token:
+    description: 'GitHub Token für private Repositories'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  chicken-path:
+    description: 'Absoluter Pfad zum Chicken Crate'
+    value: ${{ steps.setup.outputs.chicken-path }}
+  chicken-sha:
+    description: 'SHA des ausgecheckten Chicken Commits'
+    value: ${{ steps.setup.outputs.chicken-sha }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate Inputs
+      shell: bash
+      run: |
+        if [[ -z "${{ inputs.chicken-repository }}" ]]; then
+          echo "::error::chicken-repository input is required"
+          exit 1
+        fi
+
+    # Ermittle den Workspace-Root (parent von fos/fos_client)
+    - name: Calculate Workspace Paths
+      id: paths
+      shell: bash
+      run: |
+        # Der aktuelle Checkout ist in $GITHUB_WORKSPACE (z.B. /home/runner/work/fos_client/fos_client)
+        # Wir müssen ein Verzeichnis höher gehen und dann die Struktur erstellen
+        WORKSPACE_ROOT="$(dirname "$GITHUB_WORKSPACE")"
+        echo "workspace-root=$WORKSPACE_ROOT" >> $GITHUB_OUTPUT
+        echo "chicken-path=$WORKSPACE_ROOT/chicken" >> $GITHUB_OUTPUT
+        echo "fos-path=$WORKSPACE_ROOT/fos" >> $GITHUB_OUTPUT
+
+    - name: Create Directory Structure
+      shell: bash
+      run: |
+        WORKSPACE_ROOT="${{ steps.paths.outputs.workspace-root }}"
+        echo "Creating workspace structure in: $WORKSPACE_ROOT"
+        
+        # Erstelle die Verzeichnisstruktur
+        mkdir -p "$WORKSPACE_ROOT/chicken"
+        mkdir -p "$WORKSPACE_ROOT/fos"
+        
+        # Verschiebe das aktuelle Repo (fos_client) in den richtigen Unterordner
+        # Das aktuelle Repo ist bereits in $GITHUB_WORKSPACE gecheckt aus
+        if [[ ! -d "$WORKSPACE_ROOT/fos/fos_client" ]]; then
+          echo "Moving fos_client to correct location..."
+          mv "$GITHUB_WORKSPACE" "$WORKSPACE_ROOT/fos/fos_client"
+          # Aktualisiere GITHUB_WORKSPACE für nachfolgende Steps
+          echo "GITHUB_WORKSPACE=$WORKSPACE_ROOT/fos/fos_client" >> $GITHUB_ENV
+        fi
+        
+        echo "Directory structure created successfully"
+
+    - name: Checkout Chicken Repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.chicken-repository }}
+        ref: ${{ inputs.chicken-ref }}
+        path: chicken
+        token: ${{ inputs.token }}
+        fetch-depth: 1
+
+    - name: Verify Chicken Structure
+      id: setup
+      shell: bash
+      run: |
+        WORKSPACE_ROOT="${{ steps.paths.outputs.workspace-root }}"
+        CHICKEN_PATH="$WORKSPACE_ROOT/chicken"
+        
+        # Verifiziere dass das chicken crate existiert
+        if [[ ! -d "$CHICKEN_PATH/crates/chicken" ]]; then
+          echo "::error::Chicken crate not found at expected location: $CHICKEN_PATH/crates/chicken"
+          echo "Contents of $CHICKEN_PATH:"
+          ls -la "$CHICKEN_PATH"
+          exit 1
+        fi
+        
+        if [[ ! -f "$CHICKEN_PATH/crates/chicken/Cargo.toml" ]]; then
+          echo "::error::Cargo.toml not found in chicken crate"
+          exit 1
+        fi
+        
+        # Ermittle den aktuellen SHA für Tracking
+        cd "$CHICKEN_PATH"
+        CHICKEN_SHA=$(git rev-parse --short HEAD)
+        echo "chicken-sha=$CHICKEN_SHA" >> $GITHUB_OUTPUT
+        echo "chicken-path=$CHICKEN_PATH/crates/chicken" >> $GITHUB_OUTPUT
+        
+        echo "✓ Chicken dependency verified"
+        echo "  Path: $CHICKEN_PATH/crates/chicken"
+        echo "  SHA: $CHICKEN_SHA"
+
+    - name: Update Workspace Environment
+      shell: bash
+      run: |
+        # Setze die neuen Pfade für nachfolgende Steps
+        WORKSPACE_ROOT="${{ steps.paths.outputs.workspace-root }}"
+        echo "GITHUB_WORKSPACE=$WORKSPACE_ROOT/fos/fos_client" >> $GITHUB_ENV
+        echo "CHICKEN_PATH=$WORKSPACE_ROOT/chicken" >> $GITHUB_ENV
+        echo "FOS_PATH=$WORKSPACE_ROOT/fos" >> $GITHUB_ENV
+        echo "WORKSPACE_ROOT=$WORKSPACE_ROOT" >> $GITHUB_ENV
+
+    - name: Display Final Structure
+      shell: bash
+      run: |
+        WORKSPACE_ROOT="${{ steps.paths.outputs.workspace-root }}"
+        echo "=== Final Workspace Structure ==="
+        tree -L 3 "$WORKSPACE_ROOT" || find "$WORKSPACE_ROOT" -maxdepth 3 -type d | head -20
+        
+        echo ""
+        echo "=== Verifying Cargo.toml paths ==="
+        cat "$WORKSPACE_ROOT/fos/fos_client/Cargo.toml" | grep -A2 "chicken"

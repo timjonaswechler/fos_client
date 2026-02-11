@@ -1,6 +1,25 @@
 pub mod chat;
 pub mod debug;
 
+// =============================================================================
+// Steam Configuration - Wird von build.rs generiert
+// =============================================================================
+// Dieses Modul enthält die Steam App ID und Build-Konfiguration.
+// Die Werte werden zur Compile-Zeit aus der Umgebungsvariable STEAM_APP_ID
+// oder der Datei steam_appid.txt gelesen.
+//
+// In CI/CD wird STEAM_APP_ID aus GitHub Secrets gesetzt.
+// Lokal kann die Datei steam_appid.txt verwendet werden (nicht committen!).
+// =============================================================================
+pub mod steam_config {
+    include!(concat!(env!("OUT_DIR"), "/steam_config.rs"));
+}
+
+// Re-exports für einfachen Zugriff
+pub use steam_config::BUILD_PROFILE;
+pub use steam_config::IS_RELEASE;
+pub use steam_config::STEAM_APP_ID;
+
 use {
     bevy::prelude::*,
     chat::ChatPlugin,

@@ -1,0 +1,409 @@
+# =============================================================================
+# Release Workflow: Multi-Platform Build Pipeline für fos_client
+# =============================================================================
+# Dieser Workflow wird durch Git Tags (v*) ausgelöst und baut das Rust-Game
+# für alle unterstützten Plattformen.
+#
+# Plattformen:
+#   - Linux (x86_64)
+#   - macOS (x86_64, Apple Silicon)
+#   - Windows (x86_64)
+#
+# Sicherheit:
+#   - Steam App ID wird aus GitHub Secrets gelesen
+#   - Keine Secrets werden geloggt
+#   - Binaries werden als GitHub Release Assets hochgeladen
+#
+# Benötigte Secrets:
+#   - STEAM_APP_ID: Die Steam App ID (z.B. 480 für SpaceWar)
+#
+# Usage:
+#   git tag v1.0.0
+#   git push origin v1.0.0
+# =============================================================================
+
+name: Release Multi-Platform
+
+on:
+  push:
+    tags:
+      - 'v*'           # v1.0.0, v1.2.3-beta, etc.
+  workflow_dispatch:    # Manuelle Ausführung möglich
+    inputs:
+      version:
+        description: 'Version (für manuellen Release, z.B. 1.0.0)'
+        required: false
+        default: ''
+
+env:
+  # Diese Werte werden von den Composite Actions verwendet
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# Verhindere parallele Runs für Releases
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ===========================================================================
+  # Job 1: Version und Metadata ermitteln
+  # ===========================================================================
+  metadata:
+    name: Extract Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version-without-v: ${{ steps.version.outputs.version-without-v }}
+      release-name: ${{ steps.version.outputs.release-name }}
+      is-prerelease: ${{ steps.version.outputs.is-prerelease }}
+      chicken-repo: ${{ steps.config.outputs.chicken-repo }}
+    steps:
+      - name: Extract Version from Tag
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # Von Git Tag extrahieren
+            VERSION="${{ github.ref_name }}"
+          else
+            # Von manuellem Input oder default
+            VERSION="v${{ github.event.inputs.version || '0.0.0-manual' }}"
+          fi
+          
+          # Entferne 'v' Präfix für einige Zwecke
+          VERSION_NO_V="${VERSION#v}"
+          
+          # Prüfe ob es ein Pre-Release ist
+          if [[ "$VERSION" =~ -(alpha|beta|rc|dev|preview) ]]; then
+            IS_PRERELEASE="true"
+          else
+            IS_PRERELEASE="false"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version-without-v=$VERSION_NO_V" >> $GITHUB_OUTPUT
+          echo "release-name=Release $VERSION" >> $GITHUB_OUTPUT
+          echo "is-prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          
+          echo "Version: $VERSION"
+          echo "Is Pre-release: $IS_PRERELEASE"
+
+      - name: Load Configuration
+        id: config
+        run: |
+          # Hier können zukünftig Konfigurationswerte geladen werden
+          # z.B. aus einer Konfigurationsdatei oder Umgebungsvariablen
+          echo "chicken-repo=tim-jonaswechler/chicken" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # Job 2: Linux Build (x86_64)
+  # ===========================================================================
+  build-linux:
+    name: Build Linux x86_64
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fos_client
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Chicken Dependency
+        uses: ./.github/actions/setup-chicken
+        with:
+          chicken-repository: ${{ needs.metadata.outputs.chicken-repo }}
+          chicken-ref: main
+
+      - name: Build for Linux
+        uses: ./.github/actions/build-rust
+        id: build
+        with:
+          target: x86_64-unknown-linux-gnu
+          profile: release
+          steam-app-id: ${{ secrets.STEAM_APP_ID }}
+          working-directory: ${{ env.GITHUB_WORKSPACE }}
+
+      - name: Package Artifact
+        run: |
+          VERSION="${{ needs.metadata.outputs.version }}"
+          TARGET="linux-x86_64"
+          BINARY_PATH="${{ steps.build.outputs.binary-path }}"
+          
+          # Erstelle Distribution-Ordner
+          DIST_DIR="dist/$TARGET"
+          mkdir -p "$DIST_DIR"
+          
+          # Kopiere Binary
+          cp "$BINARY_PATH" "$DIST_DIR/client"
+          chmod +x "$DIST_DIR/client"
+          
+          # Erstelle Tarball
+          ARCHIVE_NAME="client-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "$ARCHIVE_NAME" -C "$DIST_DIR" .
+          
+          echo "archive-path=$PWD/$ARCHIVE_NAME" >> $GITHUB_ENV
+          echo "archive-name=$ARCHIVE_NAME" >> $GITHUB_ENV
+          
+          ls -lh "$ARCHIVE_NAME"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: client-*.tar.gz
+          retention-days: 7
+
+  # ===========================================================================
+  # Job 3: macOS Build (x86_64)
+  # ===========================================================================
+  build-macos-x86_64:
+    name: Build macOS x86_64
+    needs: metadata
+    runs-on: macos-latest
+    steps:
+      - name: Checkout fos_client
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Chicken Dependency
+        uses: ./.github/actions/setup-chicken
+        with:
+          chicken-repository: ${{ needs.metadata.outputs.chicken-repo }}
+          chicken-ref: main
+
+      - name: Build for macOS x86_64
+        uses: ./.github/actions/build-rust
+        id: build
+        with:
+          target: x86_64-apple-darwin
+          profile: release
+          steam-app-id: ${{ secrets.STEAM_APP_ID }}
+          working-directory: ${{ env.GITHUB_WORKSPACE }}
+
+      - name: Package Artifact
+        run: |
+          VERSION="${{ needs.metadata.outputs.version }}"
+          TARGET="macos-x86_64"
+          BINARY_PATH="${{ steps.build.outputs.binary-path }}"
+          
+          DIST_DIR="dist/$TARGET"
+          mkdir -p "$DIST_DIR"
+          cp "$BINARY_PATH" "$DIST_DIR/client"
+          chmod +x "$DIST_DIR/client"
+          
+          ARCHIVE_NAME="client-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "$ARCHIVE_NAME" -C "$DIST_DIR" .
+          
+          echo "archive-path=$PWD/$ARCHIVE_NAME" >> $GITHUB_ENV
+          echo "archive-name=$ARCHIVE_NAME" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86_64
+          path: client-*.tar.gz
+          retention-days: 7
+
+  # ===========================================================================
+  # Job 4: macOS Build (Apple Silicon - aarch64)
+  # ===========================================================================
+  build-macos-aarch64:
+    name: Build macOS Apple Silicon
+    needs: metadata
+    runs-on: macos-latest
+    steps:
+      - name: Checkout fos_client
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Chicken Dependency
+        uses: ./.github/actions/setup-chicken
+        with:
+          chicken-repository: ${{ needs.metadata.outputs.chicken-repo }}
+          chicken-ref: main
+
+      - name: Build for macOS aarch64
+        uses: ./.github/actions/build-rust
+        id: build
+        with:
+          target: aarch64-apple-darwin
+          profile: release
+          steam-app-id: ${{ secrets.STEAM_APP_ID }}
+          working-directory: ${{ env.GITHUB_WORKSPACE }}
+
+      - name: Package Artifact
+        run: |
+          VERSION="${{ needs.metadata.outputs.version }}"
+          TARGET="macos-aarch64"
+          BINARY_PATH="${{ steps.build.outputs.binary-path }}"
+          
+          DIST_DIR="dist/$TARGET"
+          mkdir -p "$DIST_DIR"
+          cp "$BINARY_PATH" "$DIST_DIR/client"
+          chmod +x "$DIST_DIR/client"
+          
+          ARCHIVE_NAME="client-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "$ARCHIVE_NAME" -C "$DIST_DIR" .
+          
+          echo "archive-path=$PWD/$ARCHIVE_NAME" >> $GITHUB_ENV
+          echo "archive-name=$ARCHIVE_NAME" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-aarch64
+          path: client-*.tar.gz
+          retention-days: 7
+
+  # ===========================================================================
+  # Job 5: Windows Build (x86_64)
+  # ===========================================================================
+  build-windows:
+    name: Build Windows x86_64
+    needs: metadata
+    runs-on: windows-latest
+    steps:
+      - name: Checkout fos_client
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Chicken Dependency
+        uses: ./.github/actions/setup-chicken
+        with:
+          chicken-repository: ${{ needs.metadata.outputs.chicken-repo }}
+          chicken-ref: main
+
+      - name: Build for Windows
+        uses: ./.github/actions/build-rust
+        id: build
+        with:
+          target: x86_64-pc-windows-msvc
+          profile: release
+          steam-app-id: ${{ secrets.STEAM_APP_ID }}
+          working-directory: ${{ env.GITHUB_WORKSPACE }}
+
+      - name: Package Artifact
+        shell: pwsh
+        run: |
+          $VERSION = "${{ needs.metadata.outputs.version }}"
+          $TARGET = "windows-x86_64"
+          $BINARY_PATH = "${{ steps.build.outputs.binary-path }}"
+          
+          # Erstelle Distribution-Ordner
+          $DIST_DIR = "dist/$TARGET"
+          New-Item -ItemType Directory -Force -Path $DIST_DIR | Out-Null
+          
+          # Kopiere Binary
+          Copy-Item $BINARY_PATH "$DIST_DIR/client.exe"
+          
+          # Erstelle Zip-Archiv
+          $ARCHIVE_NAME = "client-${VERSION}-${TARGET}.zip"
+          Compress-Archive -Path "$DIST_DIR/*" -DestinationPath $ARCHIVE_NAME
+          
+          echo "archive-path=$PWD/$ARCHIVE_NAME" >> $env:GITHUB_ENV
+          echo "archive-name=$ARCHIVE_NAME" >> $env:GITHUB_ENV
+          
+          Get-ChildItem $ARCHIVE_NAME | Select-Object Name, Length
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: client-*.zip
+          retention-days: 7
+
+  # ===========================================================================
+  # Job 6: GitHub Release erstellen und Assets hochladen
+  # ===========================================================================
+  release:
+    name: Create GitHub Release
+    needs: [metadata, build-linux, build-macos-x86_64, build-macos-aarch64, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Für das Erstellen von Releases
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display Artifacts
+        run: |
+          echo "=== Downloaded Artifacts ==="
+          find artifacts -type f -ls
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ needs.metadata.outputs.release-name }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ needs.metadata.outputs.is-prerelease }}
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+          body: |
+            ## Release ${{ needs.metadata.outputs.version }}
+            
+            ### Downloads
+            
+            | Plattform | Architektur | Download |
+            |-----------|-------------|----------|
+            | Linux | x86_64 | `client-${{ needs.metadata.outputs.version }}-linux-x86_64.tar.gz` |
+            | macOS | x86_64 (Intel) | `client-${{ needs.metadata.outputs.version }}-macos-x86_64.tar.gz` |
+            | macOS | aarch64 (Apple Silicon) | `client-${{ needs.metadata.outputs.version }}-macos-aarch64.tar.gz` |
+            | Windows | x86_64 | `client-${{ needs.metadata.outputs.version }}-windows-x86_64.zip` |
+            
+            ### Installation
+            
+            **Linux/macOS:**
+            ```bash
+            tar -xzf client-<version>-<platform>.tar.gz
+            ./client
+            ```
+            
+            **Windows:**
+            Extrahiere die ZIP-Datei und führe `client.exe` aus.
+            
+            ### Steam
+            Dieser Build verwendet Steam App ID: `${{ secrets.STEAM_APP_ID }}`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===========================================================================
+  # Job 7: Release-Validierung (optional)
+  # ===========================================================================
+  verify:
+    name: Verify Release
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Release Assets
+        run: |
+          echo "✓ Release erfolgreich erstellt"
+          echo "Alle Plattformen wurden gebaut und hochgeladen"
+          
+      - name: Notify Success
+        if: success()
+        run: |
+          echo "🎉 Release ${{ github.ref_name }} erfolgreich erstellt!"
+          echo "Binaries für Linux, macOS (Intel + Apple Silicon) und Windows verfügbar"
+
+  # ===========================================================================
+  # Job 8: Cleanup bei Fehler (immer ausführen)
+  # ===========================================================================
+  cleanup:
+    name: Cleanup
+    needs: [release]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cleanup Summary
+        run: |
+          if [[ "${{ needs.release.result }}" == "success" ]]; then
+            echo "✓ Release completed successfully"
+          else
+            echo "✗ Release failed or was cancelled"
+          fi

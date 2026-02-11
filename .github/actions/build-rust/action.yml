@@ -1,0 +1,290 @@
+# =============================================================================
+# Composite Action: Build Rust Project
+# =============================================================================
+# Diese Action kompiliert das Rust-Projekt für eine spezifische Zielplattform
+# und erstellt ein optimiertes Release-Binary.
+#
+# Features:
+#   - Plattformspezifische System-Dependencies (für Bevy/Linux)
+#   - Cross-Compilation Support
+#   - Cache-Optimierung mit Swatinem/rust-cache
+#   - Artifact-Erstellung mit konsistentem Naming
+#
+# Usage:
+#   - uses: ./.github/actions/build-rust
+#     with:
+#       target: x86_64-unknown-linux-gnu
+#       steam-app-id: ${{ secrets.STEAM_APP_ID }}
+# =============================================================================
+
+name: 'Build Rust Project'
+description: 'Kompiliert das Rust-Projekt für eine spezifische Zielplattform'
+
+inputs:
+  target:
+    description: 'Rust Target Triple (z.B. x86_64-unknown-linux-gnu)'
+    required: true
+  profile:
+    description: 'Cargo Build Profile'
+    required: false
+    default: 'release'
+  steam-app-id:
+    description: 'Steam App ID (aus GitHub Secrets)'
+    required: true
+  working-directory:
+    description: 'Arbeitsverzeichnis für Cargo'
+    required: false
+    default: '.'
+  features:
+    description: 'Zusätzliche Cargo Features (kommasepariert)'
+    required: false
+    default: ''
+
+outputs:
+  binary-path:
+    description: 'Pfad zum kompilierten Binary'
+    value: ${{ steps.build.outputs.binary-path }}
+  binary-name:
+    description: 'Name des Binary (plattformspezifisch)'
+    value: ${{ steps.build.outputs.binary-name }}
+  target-name:
+    description: 'Ziel-Name für Artifact-Naming'
+    value: ${{ steps.vars.outputs.target-name }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Variables
+      id: vars
+      shell: bash
+      run: |
+        # Extrahiere plattformspezifische Informationen aus dem Target
+        TARGET="${{ inputs.target }}"
+        
+        # Erzeuge einen kurzen Namen für das Target (für Artifact-Naming)
+        case "$TARGET" in
+          x86_64-unknown-linux-gnu)
+            TARGET_NAME="linux-x86_64"
+            ;;
+          aarch64-unknown-linux-gnu)
+            TARGET_NAME="linux-aarch64"
+            ;;
+          x86_64-apple-darwin)
+            TARGET_NAME="macos-x86_64"
+            ;;
+          aarch64-apple-darwin)
+            TARGET_NAME="macos-aarch64"
+            ;;
+          x86_64-pc-windows-msvc)
+            TARGET_NAME="windows-x86_64"
+            ;;
+          x86_64-pc-windows-gnu)
+            TARGET_NAME="windows-gnu-x86_64"
+            ;;
+          *)
+            TARGET_NAME=$(echo "$TARGET" | tr '_' '-' | sed 's/unknown-//g')
+            ;;
+        esac
+        
+        echo "target-name=$TARGET_NAME" >> $GITHUB_OUTPUT
+        echo "target=$TARGET" >> $GITHUB_OUTPUT
+        
+        # Bestimme Binary-Namen basierend auf Plattform
+        if [[ "$TARGET" == *"windows"* ]]; then
+          echo "binary-name=client.exe" >> $GITHUB_OUTPUT
+          echo "binary-ext=.exe" >> $GITHUB_OUTPUT
+        else
+          echo "binary-name=client" >> $GITHUB_OUTPUT
+          echo "binary-ext=" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ inputs.target }}
+
+    - name: Cache Rust Dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ inputs.target }}-${{ inputs.profile }}
+        workspaces: ${{ inputs.working-directory }}
+
+    # Linux-spezifische Dependencies für Bevy
+    - name: Install Linux Dependencies (Bevy)
+      if: contains(inputs.target, 'linux')
+      shell: bash
+      run: |
+        echo "Installing system dependencies for Bevy on Linux..."
+        sudo apt-get update
+        sudo apt-get install -y \
+          libasound2-dev \
+          libudev-dev \
+          libx11-dev \
+          libxcursor-dev \
+          libxrandr-dev \
+          libxi-dev \
+          libvulkan-dev \
+          libwayland-dev \
+          libxkbcommon-dev \
+          pkg-config
+        
+        # Für aarch64 Cross-Compilation (optional, für spätere Erweiterung)
+        if [[ "${{ inputs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+          echo "Setting up cross-compilation for aarch64..."
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu
+          
+          # Konfiguriere Cargo für Cross-Compilation
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml << 'EOF'
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+        fi
+
+    # macOS-spezifische Dependencies
+    - name: Install macOS Dependencies
+      if: contains(inputs.target, 'darwin')
+      shell: bash
+      run: |
+        echo "Installing dependencies for macOS..."
+        # Standardmäßig sind auf macOS-Runners die meisten Tools vorhanden
+        # Zusätzliche Dependencies können hier installiert werden
+        if command -v brew &> /dev/null; then
+          brew install cmake pkg-config || true
+        fi
+
+    # Windows-spezifische Dependencies
+    - name: Install Windows Dependencies
+      if: contains(inputs.target, 'windows')
+      shell: bash
+      run: |
+        echo "Setting up Windows build environment..."
+        # MSVC ist auf Windows-Runners standardmäßig verfügbar
+
+    - name: Verify Environment
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "=== Build Environment ==="
+        echo "Target: ${{ inputs.target }}"
+        echo "Profile: ${{ inputs.profile }}"
+        echo "Working Directory: ${{ inputs.working-directory }}"
+        echo "Rust Version: $(rustc --version)"
+        echo "Cargo Version: $(cargo --version)"
+        echo "STEAM_APP_ID is set: $([[ -n \"${{ inputs.steam-app-id }}\" ]] && echo 'YES' || echo 'NO')"
+        
+        # Verifiziere dass Cargo.toml existiert
+        if [[ ! -f "Cargo.toml" ]]; then
+          echo "::error::Cargo.toml not found in working directory"
+          pwd
+          ls -la
+          exit 1
+        fi
+
+    - name: Build Release Binary
+      id: build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        STEAM_APP_ID: ${{ inputs.steam-app-id }}
+        RUST_BACKTRACE: 1
+        CARGO_INCREMENTAL: 0  # Für deterministische Builds in CI
+      run: |
+        TARGET="${{ inputs.target }}"
+        PROFILE="${{ inputs.profile }}"
+        FEATURES="${{ inputs.features }}"
+        
+        echo "Building for target: $TARGET"
+        
+        # Baue das Feature-Argument
+        FEATURES_ARG=""
+        if [[ -n "$FEATURES" ]]; then
+          FEATURES_ARG="--features $FEATURES"
+        fi
+        
+        # Führe den Build aus
+        if [[ "$PROFILE" == "release" ]]; then
+          cargo build --release --target "$TARGET" $FEATURES_ARG
+        else
+          cargo build --target "$TARGET" $FEATURES_ARG
+        fi
+        
+        # Bestimme den Output-Pfad
+        if [[ "$PROFILE" == "release" ]]; then
+          BUILD_DIR="target/$TARGET/release"
+        else
+          BUILD_DIR="target/$TARGET/debug"
+        fi
+        
+        # Finde das Binary
+        BINARY_NAME="${{ steps.vars.outputs.binary-name }}"
+        BINARY_PATH="$BUILD_DIR/$BINARY_NAME"
+        
+        if [[ ! -f "$BINARY_PATH" ]]; then
+          echo "::error::Binary not found at expected path: $BINARY_PATH"
+          echo "Contents of $BUILD_DIR:"
+          ls -la "$BUILD_DIR"
+          exit 1
+        fi
+        
+        # Mache das Binary ausführbar (nicht-Windows)
+        if [[ ! "$TARGET" == *"windows"* ]]; then
+          chmod +x "$BINARY_PATH"
+        fi
+        
+        # Output für nachfolgende Steps
+        echo "binary-path=$BINARY_PATH" >> $GITHUB_OUTPUT
+        echo "binary-name=$BINARY_NAME" >> $GITHUB_OUTPUT
+        echo "build-dir=$BUILD_DIR" >> $GITHUB_OUTPUT
+        
+        echo "✓ Build successful"
+        echo "  Binary: $BINARY_PATH"
+        echo "  Size: $(du -h "$BINARY_PATH" | cut -f1)"
+        
+        # Zeige Binary-Informationen
+        file "$BINARY_PATH" || echo "file command not available"
+
+    - name: Strip Binary (optional)
+      if: inputs.profile == 'release' && !contains(inputs.target, 'windows')
+      shell: bash
+      run: |
+        BINARY_PATH="${{ steps.build.outputs.binary-path }}"
+        
+        if command -v strip &> /dev/null; then
+          echo "Stripping debug symbols from binary..."
+          ls -lh "$BINARY_PATH"
+          strip "$BINARY_PATH" || echo "Strip failed, continuing..."
+          ls -lh "$BINARY_PATH"
+        else
+          echo "strip command not available, skipping..."
+        fi
+
+    - name: Create Artifact Archive
+      id: archive
+      shell: bash
+      run: |
+        WORK_DIR="${{ inputs.working-directory }}"
+        BINARY_PATH="${{ steps.build.outputs.binary-path }}"
+        BINARY_NAME="${{ steps.build.outputs.binary-name }}"
+        TARGET_NAME="${{ steps.vars.outputs.target-name }}"
+        
+        # Erstelle einen Archive-Ordner
+        ARCHIVE_DIR="$WORK_DIR/artifacts/$TARGET_NAME"
+        mkdir -p "$ARCHIVE_DIR"
+        
+        # Kopiere das Binary
+        cp "$BINARY_PATH" "$ARCHIVE_DIR/"
+        
+        # Optional: Kopiere zusätzliche Dateien (Assets, README, etc.)
+        if [[ -d "$WORK_DIR/assets" ]]; then
+          cp -r "$WORK_DIR/assets" "$ARCHIVE_DIR/" || true
+        fi
+        
+        if [[ -f "$WORK_DIR/README.md" ]]; then
+          cp "$WORK_DIR/README.md" "$ARCHIVE_DIR/" || true
+        fi
+        
+        echo "archive-dir=$ARCHIVE_DIR" >> $GITHUB_OUTPUT
+        echo "✓ Artifact prepared in: $ARCHIVE_DIR"

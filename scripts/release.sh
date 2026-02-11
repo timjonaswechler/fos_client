@@ -16,7 +16,7 @@ fi
 perl -i -pe "s/version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
 
 git add Cargo.toml
-git commit -m "chore: bump version to $NEW_VERSION"
+git commit -m "bump version to $NEW_VERSION"
 git tag "v$NEW_VERSION"
 git push
 git push --tags
