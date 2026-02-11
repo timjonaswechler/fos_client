@@ -122,10 +122,8 @@ jobs:
           target: x86_64-unknown-linux-gnu
           profile: release
           steam-app-id: ${{ secrets.STEAM_APP_ID }}
-          working-directory: ${{ steps.setup.outputs.fos-client-path }}
 
       - name: Package Artifact
-        working-directory: ${{ steps.setup.outputs.fos-client-path }}
         run: |
           VERSION="${{ needs.metadata.outputs.version }}"
           TARGET="linux-x86_64"
@@ -152,7 +150,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-x86_64
-          path: ${{ steps.setup.outputs.fos-client-path }}/client-*.tar.gz
+          path: client-*.tar.gz
           retention-days: 7
 
   # ===========================================================================
@@ -182,10 +180,8 @@ jobs:
           target: x86_64-apple-darwin
           profile: release
           steam-app-id: ${{ secrets.STEAM_APP_ID }}
-          working-directory: ${{ steps.setup.outputs.fos-client-path }}
 
       - name: Package Artifact
-        working-directory: ${{ steps.setup.outputs.fos-client-path }}
         run: |
           VERSION="${{ needs.metadata.outputs.version }}"
           TARGET="macos-x86_64"
@@ -206,7 +202,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-x86_64
-          path: ${{ steps.setup.outputs.fos-client-path }}/client-*.tar.gz
+          path: client-*.tar.gz
           retention-days: 7
 
    # ===========================================================================
@@ -236,10 +232,8 @@ jobs:
           target: aarch64-apple-darwin
           profile: release
           steam-app-id: ${{ secrets.STEAM_APP_ID }}
-          working-directory: ${{ steps.setup.outputs.fos-client-path }}
 
       - name: Package Artifact
-        working-directory: ${{ steps.setup.outputs.fos-client-path }}
         run: |
           VERSION="${{ needs.metadata.outputs.version }}"
           TARGET="macos-aarch64"
@@ -260,7 +254,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-aarch64
-          path: ${{ steps.setup.outputs.fos-client-path }}/client-*.tar.gz
+          path: client-*.tar.gz
           retention-days: 7
 
    # ===========================================================================
@@ -290,11 +284,9 @@ jobs:
           target: x86_64-pc-windows-msvc
           profile: release
           steam-app-id: ${{ secrets.STEAM_APP_ID }}
-          working-directory: ${{ steps.setup.outputs.fos-client-path }}
 
       - name: Package Artifact
         shell: pwsh
-        working-directory: ${{ steps.setup.outputs.fos-client-path }}
         run: |
           $VERSION = "${{ needs.metadata.outputs.version }}"
           $TARGET = "windows-x86_64"
@@ -320,7 +312,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-x86_64
-          path: ${{ steps.setup.outputs.fos-client-path }}/client-*.zip
+          path: client-*.zip
           retention-days: 7
 
   # ===========================================================================

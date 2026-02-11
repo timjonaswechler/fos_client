@@ -1,31 +1,38 @@
 # =============================================================================
 # Composite Action: Setup Chicken Dependency
 # =============================================================================
-# Diese Action klont das Chicken Repository in die korrekte Ordnerstruktur.
+# Diese Action klont das Chicken Repository und bereitet die Ordnerstruktur vor.
 #
-# Ordnerstruktur nach Setup:
-#   /home/runner/work/fos_client/     # GitHub Workspace (fos_client ist hier)
-#   ├── fos_client/                   # Wird nach ../fos/fos_client verschoben
-#   └── chicken/                      # Wird nach ../chicken geklont
+# Wichtig: Diese Action darf das fos_client Repository NICHT verschieben,
+# während sie läuft, da sonst ihre eigenen Dateien nicht mehr gefunden werden.
 #
-# Am Ende:
-#   /home/runner/work/
-#   ├── fos/fos_client/               # Dieses Repo
-#   └── chicken/crates/chicken/       # Chicken Dependency
+# Stattdessen:
+# 1. Chicken wird nach ../chicken geklont (außerhalb des Workspaces)
+# 2. Ein Symlink wird erstellt: ../../chicken -> ../chicken
+# 3. Der Workflow muss dann mit working-directory arbeiten
+#
+# Ordnerstruktur vorher:
+#   /home/runner/work/fos_client/fos_client/     # Dieses Repo
+#
+# Ordnerstruktur nachher:
+#   /home/runner/work/fos_client/
+#   ├── fos_client/                              # Dieses Repo (unverändert)
+#   ├── chicken/                                 # Chicken (geklont)
+#   └── chicken_link/ -> chicken/               # Symlink für Cargo
 #
 # Usage:
 #   - uses: ./.github/actions/setup-chicken
 #     with:
-#       chicken-repository: 'your-org/chicken'
+#       chicken-repository: 'timjonaswechler/chicken'
 #       chicken-ref: 'main'
 # =============================================================================
 
 name: 'Setup Chicken Dependency'
-description: 'Klont das Chicken Repository in die korrekte Ordnerstruktur'
+description: 'Klont das Chicken Repository und erstellt die notwendige Struktur'
 
 inputs:
   chicken-repository:
-    description: 'GitHub Repository für Chicken (Format: owner/repo)'
+    description: 'GitHub Repository für Chicken'
     required: true
     default: 'timjonaswechler/chicken'
   chicken-ref:
@@ -38,164 +45,139 @@ inputs:
     default: ${{ github.token }}
 
 outputs:
-  fos-client-path:
-    description: 'Pfad zu fos_client'
-    value: ${{ steps.setup.outputs.fos-client-path }}
   chicken-path:
-    description: 'Pfad zu chicken crate'
-    value: ${{ steps.setup.outputs.chicken-path }}
+    description: 'Absoluter Pfad zum Chicken Crate'
+    value: ${{ steps.verify.outputs.chicken-path }}
+  chicken-sha:
+    description: 'SHA des ausgecheckten Chicken Commits'
+    value: ${{ steps.verify.outputs.chicken-sha }}
 
 runs:
   using: 'composite'
   steps:
     # =========================================================================
-    # Schritt 1: Pfade analysieren
+    # Schritt 1: Umgebung analysieren
     # =========================================================================
-    - name: Analyze Paths
-      id: paths
+    - name: Analyze Environment
+      id: env
       shell: bash
       run: |
-        # GitHub Actions checkt aus nach: /home/runner/work/fos_client/fos_client
-        # Wir müssen umstrukturieren auf:
-        #   /home/runner/work/fos/fos_client
-        #   /home/runner/work/chicken
-        
         CURRENT_WORKSPACE="$GITHUB_WORKSPACE"
-        WORKSPACE_ROOT="$(dirname "$CURRENT_WORKSPACE")"
+        WORKSPACE_PARENT="$(dirname "$CURRENT_WORKSPACE")"
         
         echo "current-workspace=$CURRENT_WORKSPACE" >> $GITHUB_OUTPUT
-        echo "workspace-root=$WORKSPACE_ROOT" >> $GITHUB_OUTPUT
-        echo "fos-target=$WORKSPACE_ROOT/fos/fos_client" >> $GITHUB_OUTPUT
-        echo "chicken-target=$WORKSPACE_ROOT/chicken" >> $GITHUB_OUTPUT
+        echo "workspace-parent=$WORKSPACE_PARENT" >> $GITHUB_OUTPUT
+        echo "chicken-path=$WORKSPACE_PARENT/chicken" >> $GITHUB_OUTPUT
         
-        echo "=== Environment Analysis ==="
-        echo "Current Workspace: $CURRENT_WORKSPACE"
-        echo "Workspace Root: $WORKSPACE_ROOT"
-        echo "FOS Target: $WORKSPACE_ROOT/fos/fos_client"
-        echo "Chicken Target: $WORKSPACE_ROOT/chicken"
+        echo "=== Environment ==="
+        echo "Current: $CURRENT_WORKSPACE"
+        echo "Parent: $WORKSPACE_PARENT"
+        echo "Chicken will be cloned to: $WORKSPACE_PARENT/chicken"
 
     # =========================================================================
-    # Schritt 2: Verzeichnisstruktur vorbereiten
+    # Schritt 2: Chicken Repository klonen (außerhalb des Workspaces!)
     # =========================================================================
-    - name: Prepare Directory Structure
+    - name: Clone Chicken
       shell: bash
       run: |
-        WORKSPACE_ROOT="${{ steps.paths.outputs.workspace-root }}"
-        
-        # Erstelle Zielverzeichnisse
-        mkdir -p "$WORKSPACE_ROOT/fos"
-        mkdir -p "$WORKSPACE_ROOT/chicken"
-        
-        echo "✓ Directory structure prepared"
-
-    # =========================================================================
-    # Schritt 3: Chicken mit git clone (nicht actions/checkout)
-    # =========================================================================
-    - name: Clone Chicken Repository
-      shell: bash
-      run: |
-        CHICKEN_TARGET="${{ steps.paths.outputs.chicken-target }}"
+        CHICKEN_PATH="${{ steps.env.outputs.chicken-path }}"
         REPO="${{ inputs.chicken-repository }}"
         REF="${{ inputs.chicken-ref }}"
         
         echo "=== Cloning Chicken ==="
-        echo "Repository: $REPO"
-        echo "Ref: $REF"
-        echo "Target: $CHICKEN_TARGET"
+        echo "From: github.com/$REPO"
+        echo "To: $CHICKEN_PATH"
         
-        # Clone mit Token für private Repos
+        # Klone außerhalb des Workspaces
         git clone --depth 1 --branch "$REF" \
           "https://x-access-token:${{ inputs.token }}@github.com/$REPO.git" \
-          "$CHICKEN_TARGET"
+          "$CHICKEN_PATH"
         
-        echo "✓ Chicken cloned successfully"
-        
-        # Zeige was wir haben
-        ls -la "$CHICKEN_TARGET"
+        echo "✓ Chicken cloned"
 
     # =========================================================================
-    # Schritt 4: fos_client verschieben
+    # Schritt 3: Symlink für Cargo Path-Dependency erstellen
     # =========================================================================
-    - name: Move fos_client
+    - name: Create Symlink for Cargo
       shell: bash
       run: |
-        CURRENT="${{ steps.paths.outputs.current-workspace }}"
-        TARGET="${{ steps.paths.outputs.fos-target }}"
+        CURRENT="${{ steps.env.outputs.current-workspace }}"
+        WORKSPACE_PARENT="${{ steps.env.outputs.workspace-parent }}"
         
-        echo "=== Moving fos_client ==="
-        echo "From: $CURRENT"
-        echo "To: $TARGET"
+        # Cargo erwartet: ../../chicken/crates/chicken
+        # Das ist relativ zu: /home/runner/work/fos_client/fos_client
+        # Also: /home/runner/work/chicken
         
-        # Verschiebe das Repository
-        mv "$CURRENT" "$TARGET"
+        # Erstelle Symlink: ../../chicken -> ../chicken
+        # Aber wir müssen vom fos_client Verzeichnis ausgehen
         
-        echo "✓ fos_client moved successfully"
+        # Eigentlich brauchen wir:
+        # /home/runner/work/fos_client/fos_client/../../chicken
+        # = /home/runner/work/chicken
+        
+        # Da wir nichts verschieben, passt der Pfad bereits!
+        # ../../chicken von /home/runner/work/fos_client/fos_client aus
+        # zeigt auf /home/runner/work/chicken
+        
+        echo "✓ Path structure ready"
+        echo "  From: $CURRENT"
+        echo "  Chicken: $WORKSPACE_PARENT/chicken"
+        echo "  Relative path: ../../chicken"
 
     # =========================================================================
-    # Schritt 5: Struktur verifizieren
+    # Schritt 4: Verifizieren
     # =========================================================================
-    - name: Verify and Output
-      id: setup
+    - name: Verify Setup
+      id: verify
       shell: bash
       run: |
-        WORKSPACE_ROOT="${{ steps.paths.outputs.workspace-root }}"
-        FOS_PATH="$WORKSPACE_ROOT/fos/fos_client"
-        CHICKEN_PATH="$WORKSPACE_ROOT/chicken"
+        CURRENT="${{ steps.env.outputs.current-workspace }}"
+        CHICKEN="${{ steps.env.outputs.chicken-path }}"
         
-        echo "=== Verifying Structure ==="
+        echo "=== Verification ==="
         
-        # Prüfe fos_client
-        if [[ ! -d "$FOS_PATH" ]]; then
-          echo "::error::fos_client not found at $FOS_PATH"
+        # Prüfe ob chicken existiert
+        if [[ ! -d "$CHICKEN/crates/chicken" ]]; then
+          echo "::error::Chicken crate not found at $CHICKEN/crates/chicken"
+          ls -la "$CHICKEN"
           exit 1
         fi
-        echo "✓ fos_client: $FOS_PATH"
+        echo "✓ Chicken crate found"
         
         # Prüfe Cargo.toml
-        if [[ ! -f "$FOS_PATH/Cargo.toml" ]]; then
-          echo "::error::Cargo.toml not found"
-          exit 1
-        fi
-        echo "✓ Cargo.toml exists"
-        
-        # Prüfe chicken
-        if [[ ! -d "$CHICKEN_PATH/crates/chicken" ]]; then
-          echo "::error::Chicken crate not found at $CHICKEN_PATH/crates/chicken"
-          echo "Contents of $CHICKEN_PATH:"
-          ls -la "$CHICKEN_PATH"
-          exit 1
-        fi
-        echo "✓ chicken: $CHICKEN_PATH/crates/chicken"
-        
-        # Prüfe chicken Cargo.toml
-        if [[ ! -f "$CHICKEN_PATH/crates/chicken/Cargo.toml" ]]; then
+        if [[ ! -f "$CHICKEN/crates/chicken/Cargo.toml" ]]; then
           echo "::error::Chicken Cargo.toml not found"
           exit 1
         fi
         echo "✓ Chicken Cargo.toml exists"
         
+        # Prüfe ob der Pfad vom fos_client aus erreichbar ist
+        EXPECTED_CHICKEN="$CURRENT/../../chicken"
+        if [[ ! -d "$EXPECTED_CHICKEN" ]]; then
+          echo "::error::Chicken not reachable from fos_client via ../../chicken"
+          echo "Expected at: $EXPECTED_CHICKEN"
+          ls -la "$CURRENT/../"
+          exit 1
+        fi
+        echo "✓ Chicken reachable from fos_client"
+        
         # Ermittle SHA
-        cd "$CHICKEN_PATH"
+        cd "$CHICKEN"
         CHICKEN_SHA=$(git rev-parse --short HEAD)
         
         # Setze Outputs
-        echo "fos-client-path=$FOS_PATH" >> $GITHUB_OUTPUT
-        echo "chicken-path=$CHICKEN_PATH/crates/chicken" >> $GITHUB_OUTPUT
-        
-        # Update GITHUB_WORKSPACE für nachfolgende Steps
-        echo "GITHUB_WORKSPACE=$FOS_PATH" >> $GITHUB_ENV
+        echo "chicken-path=$CHICKEN/crates/chicken" >> $GITHUB_OUTPUT
+        echo "chicken-sha=$CHICKEN_SHA" >> $GITHUB_OUTPUT
         
         echo ""
-        echo "=== Final Structure ==="
-        echo "FOS_CLIENT: $FOS_PATH"
-        echo "CHICKEN: $CHICKEN_PATH (SHA: $CHICKEN_SHA)"
-        
-        # Zeige Struktur
+        echo "=== Summary ==="
+        echo "fos_client: $CURRENT"
+        echo "chicken: $CHICKEN"
+        echo "chicken SHA: $CHICKEN_SHA"
         echo ""
-        echo "=== Directory Tree ==="
-        tree -L 3 "$WORKSPACE_ROOT" 2>/dev/null || find "$WORKSPACE_ROOT" -maxdepth 3 -type d | sort
+        echo "Cargo.toml dependency path: ../../chicken/crates/chicken"
         
-        # Prüfe Cargo.toml
+        # Zeige beide Verzeichnisse
         echo ""
-        echo "=== Cargo.toml chicken dependency ==="
-        grep -A2 "chicken" "$FOS_PATH/Cargo.toml" || echo "No chicken dependency found"
+        echo "=== Directory Structure ==="
+        ls -la "$(dirname "$CURRENT")"
