@@ -27,7 +27,7 @@ inputs:
   chicken-repository:
     description: 'GitHub Repository für Chicken (Format: owner/repo)'
     required: true
-    default: 'tim-jonaswechler/chicken'
+    default: 'timjonaswechler/chicken'
   chicken-ref:
     description: 'Git ref für Chicken Checkout'
     required: false

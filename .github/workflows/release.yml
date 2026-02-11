@@ -93,7 +93,7 @@ jobs:
         run: |
           # Hier können zukünftig Konfigurationswerte geladen werden
           # z.B. aus einer Konfigurationsdatei oder Umgebungsvariablen
-          echo "chicken-repo=tim-jonaswechler/chicken" >> $GITHUB_OUTPUT
+          echo "chicken-repo=timjonaswechler/chicken" >> $GITHUB_OUTPUT
 
   # ===========================================================================
   # Job 2: Linux Build (x86_64)
