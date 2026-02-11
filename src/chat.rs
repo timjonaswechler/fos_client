@@ -1,11 +1,15 @@
 use {
     bevy::prelude::*,
     bevy_egui::{egui, EguiContexts},
-    chicken::protocols::{
-        handle_client_chat, handle_client_chat_history_request, ClientChat,
-        ClientChatHistoryRequest, ServerChat, ServerChatHistoryResponse,
+    chicken::{
+        network::LocalClient,
+        protocols::{
+            handle_client_chat, handle_client_chat_history_request, handle_client_chat_identity,
+            ClientChat, ClientChatHistoryRequest, ClientChatIdentity, ServerChat,
+            ServerChatHistoryResponse,
+        },
+        states::{ClientStatus, ServerVisibility, SingleplayerStatus},
     },
-    chicken::states::{ClientStatus, ServerVisibility},
 };
 
 pub struct ChatPlugin;
@@ -16,16 +20,33 @@ impl Plugin for ChatPlugin {
             .add_systems(Update, (receive_chat_messages, handle_chat_input))
             .add_systems(
                 Update,
-                (handle_client_chat, handle_client_chat_history_request)
-                    .run_if(in_state(ServerVisibility::Public)),
+                (
+                    handle_client_chat,
+                    handle_client_chat_history_request,
+                    handle_client_chat_identity,
+                )
+                    .run_if(
+                        in_state(ServerVisibility::Public)
+                            .or(in_state(SingleplayerStatus::Running)),
+                    ),
             )
-            .add_systems(OnEnter(ClientStatus::Running), request_chat_history);
+            .add_systems(OnEnter(ClientStatus::Running), request_chat_history)
+            .add_systems(OnEnter(SingleplayerStatus::Running), request_chat_history)
+            .add_systems(OnEnter(ClientStatus::Running), send_chat_identity)
+            .add_systems(OnEnter(SingleplayerStatus::Running), send_chat_identity);
     }
+}
+
+#[derive(Clone)]
+pub struct ChatEntry {
+    pub sender_name: String,
+    pub sender_steam_id: Option<u64>,
+    pub text: String,
 }
 
 #[derive(Resource, Default)]
 pub struct ChatState {
-    pub messages: Vec<(Entity, String)>, // (Sender, Content)
+    pub messages: Vec<ChatEntry>,
     pub input: String,
     pub is_open: bool,
     pub has_focus: bool,
@@ -40,21 +61,23 @@ fn receive_chat_messages(
     for event in chat_history_events.read() {
         if !chat_state.history_loaded {
             chat_state.messages.clear();
-            chat_state.messages.extend(
-                event
-                    .history
-                    .iter()
-                    .cloned()
-                    .map(|entry| (entry.sender, entry.text)),
-            );
+            chat_state
+                .messages
+                .extend(event.history.iter().cloned().map(|entry| ChatEntry {
+                    sender_name: entry.sender_name,
+                    sender_steam_id: entry.sender_steam_id,
+                    text: entry.text,
+                }));
             chat_state.history_loaded = true;
         }
     }
 
     for event in chat_events.read() {
-        chat_state
-            .messages
-            .push((event.sender.clone(), event.text.clone()));
+        chat_state.messages.push(ChatEntry {
+            sender_name: event.sender_name.clone(),
+            sender_steam_id: event.sender_steam_id,
+            text: event.text.clone(),
+        });
 
         // Keep history limited (optional, e.g., last 100 messages)
         if chat_state.messages.len() > 100 {
@@ -107,6 +130,22 @@ fn handle_chat_input(
     }
 }
 
+fn send_chat_identity(
+    mut identity_writer: MessageWriter<ClientChatIdentity>,
+    local_client_names: Query<&Name, With<LocalClient>>,
+) {
+    let name = local_client_names
+        .iter()
+        .next()
+        .map(|name| name.as_str().to_string())
+        .unwrap_or_else(|| "Player".to_string());
+
+    identity_writer.write(ClientChatIdentity {
+        name,
+        steam_id: None,
+    });
+}
+
 pub fn render_chat_ui(mut egui: EguiContexts, mut chat_state: ResMut<ChatState>) {
     // Always show chat history (maybe faded?) or only when open?
     // Let's emulate a typical MMO chat: Always visible background (transparent),
@@ -138,14 +177,14 @@ pub fn render_chat_ui(mut egui: EguiContexts, mut chat_state: ResMut<ChatState>)
                 scroll_area.show(ui, |ui| {
                     ui.set_min_width(ui.available_width());
 
-                    for (sender, text) in &chat_state.messages {
+                    for entry in &chat_state.messages {
                         ui.horizontal(|ui| {
                             ui.label(
-                                egui::RichText::new(format!("{}:", sender))
+                                egui::RichText::new(format!("{}:", entry.sender_name))
                                     .color(egui::Color32::LIGHT_BLUE)
                                     .strong(),
                             );
-                            ui.label(egui::RichText::new(text).color(egui::Color32::WHITE));
+                            ui.label(egui::RichText::new(&entry.text).color(egui::Color32::WHITE));
                         });
                     }
                 });
