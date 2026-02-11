@@ -170,17 +170,36 @@ runs:
         echo "=== Build Environment ==="
         echo "Target: ${{ inputs.target }}"
         echo "Profile: ${{ inputs.profile }}"
-        echo "Working Directory: ${{ inputs.working-directory }}"
+        echo "Working Directory: $(pwd)"
         echo "Rust Version: $(rustc --version)"
         echo "Cargo Version: $(cargo --version)"
         echo "STEAM_APP_ID is set: $([[ -n \"${{ inputs.steam-app-id }}\" ]] && echo 'YES' || echo 'NO')"
         
         # Verifiziere dass Cargo.toml existiert
         if [[ ! -f "Cargo.toml" ]]; then
-          echo "::error::Cargo.toml not found in working directory"
-          pwd
+          echo "::error::Cargo.toml not found in working directory: $(pwd)"
+          echo "Directory contents:"
           ls -la
+          echo "Parent directory:"
+          ls -la ..
           exit 1
+        fi
+        
+        # Zeige Chicken Dependency Pfad aus Cargo.toml
+        echo "=== Cargo.toml Dependencies ==="
+        grep -A2 "chicken" Cargo.toml || echo "No chicken dependency found"
+        
+        # Verifiziere dass chicken erreichbar ist (relativer Pfad)
+        CHICKEN_PATH=$(grep "chicken.*path" Cargo.toml | sed 's/.*path = "\(.*\)".*/\1/')
+        if [[ -n "$CHICKEN_PATH" ]]; then
+          echo "Checking chicken path: $CHICKEN_PATH"
+          if [[ -d "$CHICKEN_PATH" ]]; then
+            echo "✓ Chicken directory exists"
+          else
+            echo "::warning::Chicken directory not found at: $CHICKEN_PATH"
+            echo "Contents of parent:"
+            ls -la "$(dirname "$CHICKEN_PATH")" || echo "Cannot list parent"
+          fi
         fi
 
     - name: Build Release Binary
