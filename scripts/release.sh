@@ -12,8 +12,8 @@ if [ "$(printf '%s\n%s\n' "$OLD_VERSION" "$NEW_VERSION" | sort -V | head -n1)" !
   exit 0
 fi
 
-# Version in Cargo.toml ersetzen (einfacher sed-Ansatz)
-sed -i "s/version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
+# Version in Cargo.toml ersetzen (Cross-Platform: macOS + Linux)
+perl -i -pe "s/version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
 
 git add Cargo.toml
 git commit -m "chore: bump version to $NEW_VERSION"
