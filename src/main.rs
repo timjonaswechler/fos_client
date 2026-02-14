@@ -7,24 +7,9 @@ use chicken::network::client::{
     ClientTarget, DiscoveredServers, DiscoveryControl, SetClientTarget,
 };
 use chicken::states::*;
-use client::{FOSClientPlugin, STEAM_APP_ID, chat, debug::DebugStatePlugin};
+use client::{FOSClientPlugin, chat, debug::DebugStatePlugin};
 
 fn main() -> AppExit {
-    // Logge Steam App ID beim Start (aus build.rs generiert)
-    println!("╔═══════════════════════════════════════════════════════════════╗");
-    println!("║  FOS Client - Steam Configuration                             ║");
-    println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║  Steam App ID: {:<46} ║", STEAM_APP_ID);
-    println!(
-        "║  Profile: {:<51} ║",
-        if cfg!(debug_assertions) {
-            "Debug"
-        } else {
-            "Release"
-        }
-    );
-    println!("╚═══════════════════════════════════════════════════════════════╝");
-
     App::new()
         .add_plugins((
             DefaultPlugins,

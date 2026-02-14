@@ -2,181 +2,28 @@ use std::{env, fs, io, path::PathBuf};
 
 fn main() -> io::Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=steam_appid.txt"); // Env-fallback
 
-    let target_dir = env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".into());
-    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".into());
-    let profile_dir = PathBuf::from(&target_dir).join(&profile);
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set by Cargo");
 
-    // =============================================================================
-    // Steam AppID (aus Env, steam_appid.txt oder default)
-    // Priorität: 1. STEAM_APP_ID Umgebungsvariable (CI/GitHub Secrets)
-    //            2. steam_appid.txt Datei (lokale Entwicklung)
-    //            3. Default 480 (SpaceWar für Testing)
-    // =============================================================================
-    let app_id = match env::var("STEAM_APP_ID") {
-        Ok(v) if !v.trim().is_empty() => {
-            println!("cargo:warning=Using STEAM_APP_ID from environment variable");
-            v
-        }
-        _ => {
-            // Versuche, eine lokale steam_appid.txt im Crate-Ordner zu lesen
-            let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
-            let fallback_path = PathBuf::from(&manifest_dir).join("steam_appid.txt");
-            match fs::read_to_string(&fallback_path) {
-                Ok(s) => {
-                    let id = s.lines().next().unwrap_or("").trim().to_string();
-                    if !id.is_empty() {
-                        println!(
-                            "cargo:warning=Using STEAM_APP_ID from {}",
-                            fallback_path.display()
-                        );
-                        id
-                    } else {
-                        println!(
-                            "cargo:warning=steam_appid.txt is empty; falling back to default app id 480 (Spacewar)"
-                        );
-                        "480".into()
-                    }
-                }
-                Err(_) => {
-                    println!(
-                        "cargo:warning=STEAM_APP_ID not set and steam_appid.txt not found; falling back to default app id 480 (Spacewar)"
-                    );
-                    "480".into()
-                }
-            }
-        }
-    };
+    // STEAM_APP_ID embedded (deine Env)
+    let appid_str = env::var("STEAM_APP_ID").unwrap_or_else(|_| {
+        println!("cargo:warning=STEAM_APP_ID missing → dev 480");
+        "480".to_string()
+    });
 
-    // =============================================================================
-    // steam_appid.txt Datei erstellen (optional)
-    // =============================================================================
-    // Die Datei wird BENÖTIGT für:
-    //   - Entwicklung mit App ID 480 (Spacewar)
-    //   - Testen ohne Steam Client
-    //
-    // Die Datei wird NICHT benötigt für:
-    //   - Release Builds mit echter Steam App ID
-    //   - Wenn das Spiel über Steam gestartet wird
-    //
-    // Steuerung:
-    //   - AUTOMATISCH: App ID 480 → Datei wird erstellt
-    //   - MANUELL: GENERATE_STEAM_APPID_FILE=true|false
-    // =============================================================================
-    let should_generate_file = match env::var("GENERATE_STEAM_APPID_FILE").as_deref() {
-        Ok("true") => {
-            println!("cargo:warning=GENERATE_STEAM_APPID_FILE=true - Creating steam_appid.txt");
-            true
-        }
-        Ok("false") => {
-            println!(
-                "cargo:warning=GENERATE_STEAM_APPID_FILE=false - Skipping steam_appid.txt creation"
-            );
-            false
-        }
-        _ => {
-            // Automatisch: Nur für App ID 480 (Spacewar) erstellen
-            if app_id == "480" {
-                println!("cargo:warning=App ID is 480 - Creating steam_appid.txt for development");
-                true
-            } else {
-                println!("cargo:warning=App ID is {} - Skipping steam_appid.txt (set GENERATE_STEAM_APPID_FILE=true to override)", app_id);
-                false
-            }
-        }
-    };
+    // config.rs generieren
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let is_release = profile == "release";
+    let version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "unknown".to_string());
 
-    if should_generate_file {
-        let appid_path = profile_dir.join("steam_appid.txt");
-        fs::create_dir_all(&profile_dir)?;
-        if let Err(e) = fs::write(&appid_path, app_id.as_bytes()) {
-            println!(
-                "cargo:warning=failed to write {}: {}",
-                appid_path.display(),
-                e
-            );
-        } else {
-            println!(
-                "cargo:warning=Created steam_appid.txt at: {}",
-                appid_path.display()
-            );
-        }
-    }
-
-    // =============================================================================
-    // Generiere Rust-Code für Compile-Time Zugriff auf Steam App ID
-    // Diese Datei wird in $OUT_DIR/steam_config.rs geschrieben
-    // =============================================================================
-    let steam_config = format!(
-        r#"// AUTOGENERATED BY build.rs - DO NOT EDIT
-// Steam Configuration generated at compile time
-
-/// Steam Application ID
-pub const STEAM_APP_ID: u32 = {};
-
-/// Steam Application ID als String
-pub const STEAM_APP_ID_STR: &str = "{}";
-
-/// Ist dies ein Release-Build?
+    let config = format!(
+        r#"pub const STEAM_APP_ID: u32 = {};
 pub const IS_RELEASE: bool = {};
-
-/// Build-Profil ("debug" oder "release")
 pub const BUILD_PROFILE: &str = "{}";
-"#,
-        app_id,
-        app_id,
-        if profile == "release" {
-            "true"
-        } else {
-            "false"
-        },
-        profile
+pub const VERSION: &str = "{}";"#,
+        appid_str, is_release, profile, version
     );
-
-    let steam_config_path = PathBuf::from(&out_dir).join("steam_config.rs");
-    fs::write(&steam_config_path, steam_config)?;
-    println!(
-        "cargo:warning=Generated steam_config.rs at: {}",
-        steam_config_path.display()
-    );
-
-    // Plattform-spezifisch: Steamworks linken (angenommen SDK in ./steamworks/)
-    if cfg!(target_os = "windows") {
-        println!("cargo:rustc-link-search=native=steamworks/redistributable_bin/win64");
-        println!("cargo:rustc-link-lib=steam_api64");
-    } else if cfg!(target_os = "linux") {
-        println!("cargo:rustc-link-search=native=steamworks/redistributable_linux64");
-        println!("cargo:rustc-link-lib=steam_api");
-        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN"); // Neben Binary suchen
-    } else if cfg!(target_os = "macos") {
-        println!("cargo:rustc-link-search=native=steamworks/redistributable_osx32"); // SDK-Pfad anpassen!
-        println!("cargo:rustc-link-lib=framework=IOKit"); // Häufig benötigt für Steam
-        println!("cargo:rustc-link-lib=framework=CoreFoundation");
-        // RPATH für dylib (neben .app oder Binary)
-        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
-
-        // steam_appid.txt ins Bundle kopieren (nur wenn benötigt)
-        if should_generate_file {
-            let bundle_path = profile_dir.join("Contents/Frameworks/steam_appid.txt");
-            fs::create_dir_all(bundle_path.parent().unwrap())?;
-            fs::write(bundle_path, app_id.as_bytes())?;
-            println!("cargo:warning=Created steam_appid.txt in macOS bundle");
-        }
-    }
-
-    // Version-Info generieren (aus Cargo.toml oder git)
-    // let version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
-    // let version_rs = out_dir.join("version.rs");
-    // fs::write(
-    //     version_rs,
-    //     format!("pub const VERSION: &str = \"{version}\";"),
-    // )?;
-
-    // Bindings generieren (optional, mit bindgen)
-    // println!("cargo:rerun-if-changed=steamworks/sdk/public/steam_api.h");
-    // ... bindgen call hier
+    fs::write(PathBuf::from(&out_dir).join("config.rs"), config)?;
 
     Ok(())
 }

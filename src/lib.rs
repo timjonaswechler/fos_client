@@ -11,24 +11,20 @@ pub mod debug;
 // In CI/CD wird STEAM_APP_ID aus GitHub Secrets gesetzt.
 // Lokal kann die Datei steam_appid.txt verwendet werden (nicht committen!).
 // =============================================================================
-pub mod steam_config {
-    include!(concat!(env!("OUT_DIR"), "/steam_config.rs"));
+pub mod config {
+    include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
 // Re-exports für einfachen Zugriff
-pub use steam_config::BUILD_PROFILE;
-pub use steam_config::IS_RELEASE;
-pub use steam_config::STEAM_APP_ID;
+pub use config::BUILD_PROFILE;
+pub use config::IS_RELEASE;
+pub use config::STEAM_APP_ID;
 
 use {
     bevy::prelude::*,
     chat::ChatPlugin,
-    chicken::network::ChickenNetPlugin,
-    chicken::notifications::{
-        ChickenNotificationPlugin, NotificationQueue, notification_lifecycle, on_notify,
-    },
-    chicken::protocols::ProtocolPlugin,
-    chicken::states::StatusManagementPlugin,
+    chicken::ChickenPlugin,
+    chicken::notifications::{NotificationQueue, notification_lifecycle, on_notify},
     serde::{Deserialize, Serialize},
 };
 
@@ -40,11 +36,10 @@ pub struct DummyEvent;
 impl Plugin for FOSClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            StatusManagementPlugin,
-            ChickenNetPlugin,
-            ProtocolPlugin,
+            ChickenPlugin,
+            // ProtocolPlugin,
             ChatPlugin,
-            ChickenNotificationPlugin,
+            // ChickenNotificationPlugin,
         ))
         .init_resource::<NotificationQueue>()
         .add_observer(on_notify)
