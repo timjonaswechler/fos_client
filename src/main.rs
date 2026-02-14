@@ -6,12 +6,16 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use chicken::network::client::{
     ClientTarget, DiscoveredServers, DiscoveryControl, SetClientTarget,
 };
-use chicken::states::*;
+use chicken::{states::*, steam::SteamworksPlugin};
 use client::{FOSClientPlugin, chat, debug::DebugStatePlugin};
 
 fn main() -> AppExit {
+    let steam_client =
+        SteamworksPlugin::init_app(client::STEAM_APP_ID).expect("failed to initialize steam");
+
     App::new()
         .add_plugins((
+            steam_client,
             DefaultPlugins,
             EguiPlugin::default(),
             WorldInspectorPlugin::new(),

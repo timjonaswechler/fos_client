@@ -1,12 +1,12 @@
 use {
     bevy::prelude::*,
-    bevy_egui::{egui, EguiContexts},
+    bevy_egui::{EguiContexts, egui},
     chicken::{
-        network::LocalClient,
+        identity::PlayerIdentity,
         protocols::{
-            handle_client_chat, handle_client_chat_history_request, handle_client_chat_identity,
             ClientChat, ClientChatHistoryRequest, ClientChatIdentity, ServerChat,
-            ServerChatHistoryResponse,
+            ServerChatHistoryResponse, handle_client_chat, handle_client_chat_history_request,
+            handle_client_chat_identity,
         },
         states::{ClientStatus, ServerVisibility, SingleplayerStatus},
     },
@@ -132,17 +132,11 @@ fn handle_chat_input(
 
 fn send_chat_identity(
     mut identity_writer: MessageWriter<ClientChatIdentity>,
-    local_client_names: Query<&Name, With<LocalClient>>,
+    idientity: Res<PlayerIdentity>,
 ) {
-    let name = local_client_names
-        .iter()
-        .next()
-        .map(|name| name.as_str().to_string())
-        .unwrap_or_else(|| "Player".to_string());
-
     identity_writer.write(ClientChatIdentity {
-        name,
-        steam_id: None,
+        name: idientity.display_name.clone(),
+        steam_id: idientity.steam_id.clone(),
     });
 }
 
