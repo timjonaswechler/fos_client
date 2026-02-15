@@ -6,10 +6,13 @@ fn main() -> io::Result<()> {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set by Cargo");
 
     // STEAM_APP_ID embedded (deine Env)
-    let appid_str = env::var("STEAM_APP_ID").unwrap_or_else(|_| {
-        println!("cargo:warning=STEAM_APP_ID missing → dev 480");
-        "480".to_string()
-    });
+    let appid_str = env::var("STEAM_APP_ID")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            println!("cargo:warning=STEAM_APP_ID missing or empty → using dev 480");
+            "480".to_string()
+        });
 
     // config.rs generieren
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
