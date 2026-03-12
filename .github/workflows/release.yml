@@ -123,7 +123,7 @@ jobs:
           ls -lh "$ARCHIVE_NAME"
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-x86_64
           path: client-*.tar.gz
@@ -168,7 +168,7 @@ jobs:
           echo "archive-name=$ARCHIVE_NAME" >> $GITHUB_ENV
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-x86_64
           path: client-*.tar.gz
@@ -213,7 +213,7 @@ jobs:
           echo "archive-name=$ARCHIVE_NAME" >> $GITHUB_ENV
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-aarch64
           path: client-*.tar.gz
@@ -260,7 +260,7 @@ jobs:
           Get-ChildItem $ARCHIVE_NAME | Select-Object Name, Length
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-x86_64
           path: client-*.zip
@@ -277,7 +277,7 @@ jobs:
       contents: write
     steps:
       - name: Download All Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
