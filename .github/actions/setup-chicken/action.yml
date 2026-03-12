@@ -39,7 +39,7 @@ inputs:
   chicken-ref:
     description: 'Git ref für Chicken Checkout'
     required: false
-    default: 'main'
+    default: 'v0.1.2'
   token:
     description: 'GitHub Token'
     required: false
