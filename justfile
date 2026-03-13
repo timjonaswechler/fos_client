@@ -19,6 +19,9 @@ default:
 release version:
     cargo xtask release {{version}}
 
+changelog:
+    git-cliff --config cliff.toml --output CHANGELOG.md
+
 # =============================================================================
 # Build & Run
 # =============================================================================

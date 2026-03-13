@@ -52,6 +52,7 @@ require_conventional = false
 split_commits = false
 protect_breaking_commits = false
 commit_parsers = [
+    { message = "^chore\\(release\\)", skip = true },
     { message = "^feat", group = "🚀 Features" },
     { message = "^fix", group = "🐛 Bug Fixes" },
     { message = "^doc", group = "📚 Documentation" },
