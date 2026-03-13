@@ -4,7 +4,7 @@ version = "0.1.2"
 edition = "2024"
 
 [dependencies]
-chicken = { git = "https://github.com/timjonaswechler/chicken", tag = "v0.1.2" }
+chicken = { git = "https://github.com/timjonaswechler/chicken", tag = "v0.1.0" }
 
 bevy = { version = "0.18.0"}
 bevy_egui = "0.39.0"
