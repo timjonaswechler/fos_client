@@ -9,7 +9,7 @@ use {
             ClientChatIdentity, ServerChat, ServerChatAutocomplete, ServerChatError,
             ServerChatHistoryResponse,
         },
-        states::{ClientStatus, ServerVisibility, SingleplayerStatus},
+        states::states::session::{ClientConnectionStatus, ServerStatus, ServerVisibility},
     },
 };
 
@@ -27,21 +27,20 @@ impl Plugin for ChatPlugin {
                     update_autocomplete_data,
                     update_error_timer,
                 )
-                    .run_if(
-                        in_state(ServerVisibility::Public)
-                            .or(in_state(SingleplayerStatus::Running)),
-                    ),
+                    .run_if(in_state(ServerVisibility::Public).or(in_state(ServerStatus::Running))),
             )
             .add_systems(
                 Update,
-                (handle_chat_input, render_chat_ui).run_if(
-                    in_state(ServerVisibility::Public).or(in_state(SingleplayerStatus::Running)),
-                ),
+                (handle_chat_input, render_chat_ui)
+                    .run_if(in_state(ServerVisibility::Public).or(in_state(ServerStatus::Running))),
             )
-            .add_systems(OnEnter(ClientStatus::Running), request_chat_history)
-            .add_systems(OnEnter(SingleplayerStatus::Running), request_chat_history)
-            .add_systems(OnEnter(ClientStatus::Running), send_chat_identity)
-            .add_systems(OnEnter(SingleplayerStatus::Running), send_chat_identity);
+            .add_systems(
+                OnEnter(ClientConnectionStatus::Playing),
+                request_chat_history,
+            )
+            .add_systems(OnEnter(ServerStatus::Running), request_chat_history)
+            .add_systems(OnEnter(ClientConnectionStatus::Playing), send_chat_identity)
+            .add_systems(OnEnter(ServerStatus::Running), send_chat_identity);
     }
 }
 
@@ -203,7 +202,6 @@ fn format_error_type(error_type: &chicken::protocols::ChatErrorType) -> &'static
     match error_type {
         ChatErrorType::MessageTooLong => "Zu lang",
         ChatErrorType::EmptyMessage => "Leere Nachricht",
-        ChatErrorType::RateLimited => "Rate Limit",
         ChatErrorType::UnknownCommand => "Unbekannter Befehl",
     }
 }
@@ -326,8 +324,11 @@ fn request_chat_history(
 
 fn send_chat_identity(
     mut identity_writer: MessageWriter<ClientChatIdentity>,
-    identity: Res<PlayerIdentity>,
+    identity: Option<Res<PlayerIdentity>>,
 ) {
+    let Some(identity) = identity else {
+        return;
+    };
     identity_writer.write(ClientChatIdentity {
         name: identity.display_name.clone(),
         steam_id: identity.steam_id.clone(),
