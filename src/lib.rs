@@ -24,6 +24,8 @@ use {
     bevy::prelude::*,
     chat::ChatPlugin,
     chicken::ChickenPlugin,
+    chicken::identity::PlayerIdentity,
+    chicken::network::client::LocalIdentity,
     chicken::notifications::{NotificationQueue, notification_lifecycle, on_notify},
     serde::{Deserialize, Serialize},
 };
@@ -43,6 +45,21 @@ impl Plugin for FOSClientPlugin {
         ))
         .init_resource::<NotificationQueue>()
         .add_observer(on_notify)
-        .add_systems(Update, notification_lifecycle);
+        .add_systems(Update, notification_lifecycle)
+        .add_systems(PostStartup, init_player_identity);
     }
+}
+
+/// Initialisiert `PlayerIdentity` aus der lokalen `LocalIdentity` (Ed25519-Key).
+/// Solange kein echter Spielername (Steam, Profil) gesetzt ist, wird Player-{id} verwendet.
+fn init_player_identity(
+    mut commands: Commands,
+    local_identity: Option<Res<LocalIdentity>>,
+) {
+    let Some(local_id) = local_identity else {
+        return;
+    };
+    commands.insert_resource(PlayerIdentity::local(
+        format!("Player-{}", &local_id.player_id[..8]),
+    ));
 }

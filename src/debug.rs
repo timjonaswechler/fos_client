@@ -1,9 +1,9 @@
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
-use chicken::states::{
-    AppScope, ClientStatus, HostNewGameMenuScreen, HostSavedGameMenuScreen, JoinGameMenuScreen,
-    MainMenuContext, MultiplayerSetup, NewGameMenuScreen, SavedGameMenuScreen, ServerVisibility,
-    SessionState, SessionType, SingleplayerSetup, SingleplayerStatus,
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use chicken::states::states::{
+    app::AppScope,
+    menu::{main::*, multiplayer::*, singleplayer::*},
+    session::*,
 };
 
 pub struct DebugStatePlugin;
@@ -19,9 +19,9 @@ fn ui_debug_state_overlay(
     // App Scope
     app_scope: Option<Res<State<AppScope>>>,
     // Menu States
-    menu_context: Option<Res<State<MainMenuContext>>>,
-    mp_setup: Option<Res<State<MultiplayerSetup>>>,
-    sp_setup: Option<Res<State<SingleplayerSetup>>>,
+    menu_context: Option<Res<State<MainMenuScreen>>>,
+    mp_setup: Option<Res<State<MultiplayerMenuScreen>>>,
+    sp_setup: Option<Res<State<SingleplayerMenuScreen>>>,
     // Sub-menus (Multiplayer)
     host_new_game_screen: Option<Res<State<HostNewGameMenuScreen>>>,
     host_saved_game_screen: Option<Res<State<HostSavedGameMenuScreen>>>,
@@ -33,8 +33,8 @@ fn ui_debug_state_overlay(
     session_type: Option<Res<State<SessionType>>>,
     session_state: Option<Res<State<SessionState>>>,
     // Logic States
-    client_status: Option<Res<State<ClientStatus>>>,
-    sp_status: Option<Res<State<SingleplayerStatus>>>,
+    client_status: Option<Res<State<ClientConnectionStatus>>>,
+    sp_status: Option<Res<State<ServerStatus>>>,
     server_visibility: Option<Res<State<ServerVisibility>>>,
 ) {
     let Ok(ctx) = egui.ctx_mut() else {

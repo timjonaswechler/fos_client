@@ -3,10 +3,10 @@ use {
     bevy_egui::{EguiContexts, egui},
     chicken::{
         identity::PlayerIdentity,
+        network::server::chat::CHAT_CLIENT_HISTORY_SIZE,
         protocols::{
-            CHAT_CLIENT_HISTORY_SIZE, CHAT_COMMAND_PREFIX, CHAT_MENTION_PREFIX,
-            CHAT_MESSAGE_MAX_LENGTH, ChatCommandInfo, ChatPlayerInfo, ClientChat,
-            ClientChatIdentity, ServerChat, ServerChatAutocomplete, ServerChatError,
+            CHAT_COMMAND_PREFIX, CHAT_MENTION_PREFIX, CHAT_MESSAGE_MAX_LENGTH, ChatCommandInfo,
+            ChatPlayerInfo, ClientChat, ServerChat, ServerChatAutocomplete, ServerChatError,
             ServerChatHistoryResponse,
         },
         states::states::session::{ClientConnectionStatus, ServerStatus, ServerVisibility},
@@ -26,21 +26,22 @@ impl Plugin for ChatPlugin {
                     handle_chat_errors,
                     update_autocomplete_data,
                     update_error_timer,
+                    handle_chat_input,
                 )
-                    .run_if(in_state(ServerVisibility::Public).or(in_state(ServerStatus::Running))),
-            )
-            .add_systems(
-                Update,
-                (handle_chat_input, render_chat_ui)
-                    .run_if(in_state(ServerVisibility::Public).or(in_state(ServerStatus::Running))),
+                    .run_if(
+                        in_state(ServerStatus::Running)
+                            .or(in_state(ServerVisibility::Public))
+                            .or(in_state(ClientConnectionStatus::Playing)),
+                    ),
             )
             .add_systems(
                 OnEnter(ClientConnectionStatus::Playing),
                 request_chat_history,
             )
-            .add_systems(OnEnter(ServerStatus::Running), request_chat_history)
-            .add_systems(OnEnter(ClientConnectionStatus::Playing), send_chat_identity)
-            .add_systems(OnEnter(ServerStatus::Running), send_chat_identity);
+            .add_systems(
+                OnEnter(ServerStatus::Running),
+                request_chat_history,
+            );
     }
 }
 
@@ -287,7 +288,7 @@ fn handle_chat_input(
             }
         }
 
-        if keys.just_pressed(KeyCode::Tab) || keys.just_pressed(KeyCode::Enter) {
+        if keys.just_pressed(KeyCode::Tab) {
             // Autocomplete-Auswahl übernehmen
             if let Some(item) = chat_state
                 .autocomplete
@@ -322,36 +323,21 @@ fn request_chat_history(
     client_history_writer.write(chicken::protocols::ClientChatHistoryRequest);
 }
 
-fn send_chat_identity(
-    mut identity_writer: MessageWriter<ClientChatIdentity>,
-    identity: Option<Res<PlayerIdentity>>,
-) {
-    let Some(identity) = identity else {
-        return;
-    };
-    identity_writer.write(ClientChatIdentity {
-        name: identity.display_name.clone(),
-        steam_id: identity.steam_id.clone(),
-    });
-}
-
 /// Rendert die Chat-UI mit egui
 pub fn render_chat_ui(
     mut contexts: EguiContexts,
     mut chat_state: ResMut<ChatState>,
-    mut identity_writer: MessageWriter<ClientChatIdentity>,
+    identity: Option<Res<PlayerIdentity>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
 
-    // Sende Identity beim ersten Mal
-    if chat_state.own_player_name.is_empty() {
+    // Eigenen Namen aus PlayerIdentity lesen
+    if let Some(ref id) = identity {
+        chat_state.own_player_name = id.display_name.clone();
+    } else if chat_state.own_player_name.is_empty() {
         chat_state.own_player_name = "Player".to_string();
-        identity_writer.write(ClientChatIdentity {
-            name: chat_state.own_player_name.clone(),
-            steam_id: None,
-        });
     }
 
     // Chat-Fenster

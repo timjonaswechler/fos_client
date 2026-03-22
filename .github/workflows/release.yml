@@ -1,5 +1,5 @@
 # =============================================================================
-# Release Workflow: Multi-Platform Build Pipeline für fos_client
+# Release Workflow: Multi-Platform Build Pipeline für campfire
 # =============================================================================
 # Dieser Workflow wird durch Git Tags (v*) ausgelöst und baut das Rust-Game
 # für alle unterstützten Plattformen.
@@ -27,13 +27,13 @@ name: Release Multi-Platform
 on:
   push:
     tags:
-      - 'v*'           # v1.0.0, v1.2.3-beta, etc.
-  workflow_dispatch:    # Manuelle Ausführung möglich
+      - "v*" # v1.0.0, v1.2.3-beta, etc.
+  workflow_dispatch: # Manuelle Ausführung möglich
     inputs:
       version:
-        description: 'Version (für manuellen Release, z.B. 1.0.0)'
+        description: "Version (für manuellen Release, z.B. 1.0.0)"
         required: false
-        default: ''
+        default: ""
 
 env:
   CARGO_TERM_COLOR: always
@@ -90,7 +90,7 @@ jobs:
     needs: metadata
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout fos_client
+      - name: Checkout campfire
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -137,7 +137,7 @@ jobs:
     needs: metadata
     runs-on: macos-latest
     steps:
-      - name: Checkout fos_client
+      - name: Checkout campfire
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -182,7 +182,7 @@ jobs:
     needs: metadata
     runs-on: macos-latest
     steps:
-      - name: Checkout fos_client
+      - name: Checkout campfire
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -227,7 +227,7 @@ jobs:
     needs: metadata
     runs-on: windows-latest
     steps:
-      - name: Checkout fos_client
+      - name: Checkout campfire
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -271,12 +271,19 @@ jobs:
   # ===========================================================================
   release:
     name: Create GitHub Release
-    needs: [metadata, build-linux, build-macos-x86_64, build-macos-aarch64, build-windows]
+    needs:
+      [
+        metadata,
+        build-linux,
+        build-macos-x86_64,
+        build-macos-aarch64,
+        build-windows,
+      ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout fos_client
+      - name: Checkout campfire
         uses: actions/checkout@v6
         with:
           fetch-depth: 0

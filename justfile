@@ -1,5 +1,5 @@
 # =============================================================================
-# fos_client: Clean Build Automation
+# campfire: Clean Build Automation
 # =============================================================================
 # Usage:
 #   just                          # Hilfe
@@ -69,7 +69,7 @@ update:
 # =============================================================================
 
 info:
-    @echo "Project: fos_client"
+    @echo "Project: campfire"
     @echo "Rust: $(rustc --version)"
     @echo "Cargo: $(cargo --version)"
 

@@ -73,4 +73,4 @@ topo_order_commits = true
 sort_commits = "oldest"
 
 [git.link]
-github = { owner = "timjonaswechler", repo = "fos_client" }
+github = { owner = "timjonaswechler", repo = "campfire" }

@@ -1,9 +1,9 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use std::process::Command;
 
 #[derive(Parser)]
-#[command(name = "cargo xtask", about = "Dev task runner for fos_client")]
+#[command(name = "cargo xtask", about = "Dev task runner for campfire")]
 struct Cli {
     #[command(subcommand)]
     command: Task,
@@ -21,7 +21,13 @@ enum Task {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args()
         .enumerate()
-        .filter_map(|(i, a)| if i == 1 && a == "xtask" { None } else { Some(a) })
+        .filter_map(|(i, a)| {
+            if i == 1 && a == "xtask" {
+                None
+            } else {
+                Some(a)
+            }
+        })
         .collect();
 
     let cli = Cli::parse_from(args);
@@ -38,7 +44,10 @@ fn release(version: String) -> Result<()> {
     // Validate semver format x.y.z
     let parts: Vec<&str> = version.split('.').collect();
     if parts.len() < 3 || parts.iter().any(|p| p.parse::<u32>().is_err()) {
-        bail!("Invalid version: '{}'. Expected format: x.y.z (e.g. 0.2.0)", version);
+        bail!(
+            "Invalid version: '{}'. Expected format: x.y.z (e.g. 0.2.0)",
+            version
+        );
     }
 
     let tag = format!("v{}", version);
@@ -69,7 +78,10 @@ fn release(version: String) -> Result<()> {
 
     // Commit
     cmd("git", &["add", "Cargo.toml"])?;
-    cmd("git", &["commit", "-m", &format!("chore(release): {}", tag)])?;
+    cmd(
+        "git",
+        &["commit", "-m", &format!("chore(release): {}", tag)],
+    )?;
 
     // Tag
     cmd("git", &["tag", &tag])?;
